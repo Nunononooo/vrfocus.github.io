@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core/index.min.css" />
+  <style>
+    body { margin: 0; }
+    #viewer { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="viewer"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three/build/three.module.js",
+      "@photo-sphere-viewer/core": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/core/index.module.js",
+      "@photo-sphere-viewer/gyroscope-plugin": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/gyroscope-plugin/index.module.js",
+      "@photo-sphere-viewer/stereo-plugin": "https://cdn.jsdelivr.net/npm/@photo-sphere-viewer/stereo-plugin/index.module.js"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import { Viewer } from '@photo-sphere-viewer/core';
+    import { GyroscopePlugin } from '@photo-sphere-viewer/gyroscope-plugin';
+    import { StereoPlugin } from '@photo-sphere-viewer/stereo-plugin';
+
+    const viewer = new Viewer({
+      container: document.querySelector('#viewer'),
+      panorama: 'panorama.jpg', 
+      caption: '5分钟专注恢复',
+      loadingTxt: '加载中...',
+      navbar: ['zoom', 'caption', 'gyroscope', 'stereo'],
+      plugins: [
+        GyroscopePlugin,
+        StereoPlugin,
+      ],
+    });
+
+    const audio = new Audio('792342__klankbeeld__park-forest-haanwijk-1141-am-250306_1056_cut1.mp3');
+    audio.loop = true;
+    audio.preload = 'auto';
+    audio.volume = 0.7;
+
+    let sessionTimer = null;
+    let sessionActive = false;
+
+    function fadeOutAudio(duration) {
+  const step = 50;
+  const steps = duration / step;
+  const startVolume = audio.volume;
+  let i = 0;
+  const timer = setInterval(() => {
+    i++;
+    audio.volume = Math.max(0, startVolume * (1 - i / steps));
+    if (i >= steps) {
+      clearInterval(timer);
+      audio.pause();
+      audio.volume = startVolume;  // 恢复音量，供下次播放
+    }
+  }, step);
+}
+
+function startSession() {
+  if (sessionActive) return;
+  sessionActive = true;
+
+  // 1. 隐藏开始覆盖层，显示呼吸引导
+  document.getElementById('start-overlay').style.display = 'none';
+  document.getElementById('breath-guide').style.display = 'block';
+
+  // 2. 播放音频（必须在用户点击的手势上下文中调用）
+  audio.currentTime = 0;
+  audio.play().catch(err => console.warn('音频播放失败:', err));
+
+  // 3. 启动 5 分钟计时
+  sessionTimer = setTimeout(endSession, 5 * 60 * 1000);
+}
+
+function endSession() {
+  sessionActive = false;
+
+  // 停止音频并淡出，避免突然静音显得生硬
+  fadeOutAudio(500);
+
+  // 隐藏呼吸引导，显示结束提示
+  document.getElementById('breath-guide').style.display = 'none';
+  document.getElementById('end-message').style.display = 'flex';
+}
+
+document.getElementById('start-btn').addEventListener('click', startSession);
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  // 清理上一轮的计时器和音频状态
+  if (sessionTimer) {
+    clearTimeout(sessionTimer);
+    sessionTimer = null;
+  }
+  audio.pause();
+  audio.volume = 0.7;
+  audio.currentTime = 0;
+
+  // 隐藏结束提示，回到开始状态
+  document.getElementById('end-message').style.display = 'none';
+  document.getElementById('start-overlay').style.display = 'flex';
+  sessionActive = false;
+
+  startSession();
+});
+
+  </script>
+  <div id="breath-guide" style="position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+  pointer-events:none; text-align:center; color:white; font-size:14px;">
+  <div id="breath-circle" style="width:80px; height:80px; border-radius:50%;
+    border:2px solid rgba(255,255,255,0.6); margin:0 auto 12px;
+    animation: breathe 10s ease-in-out infinite;"></div>
+</div>
+
+<style>
+@keyframes breathe {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0.9;
+  }
+}
+
+#breath-circle::after {
+  content: '吸气';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 14px;
+  color: rgba(255,255,255,0.9);
+  animation: breath-text 10s ease-in-out infinite;
+}
+
+@keyframes breath-text {
+  0%, 45% {
+    content: '吸气';
+  }
+  50%, 95% {
+    content: '呼气';
+  }
+  100% {
+    content: '吸气';
+  }
+}
+</style>
+
+<!-- 开始按钮（初始显示，点击后隐藏） -->
+<div id="start-overlay" style="position:fixed; inset:0; display:flex; align-items:center;
+  justify-content:center; background:rgba(0,0,0,0.35); z-index:10;">
+  <button id="start-btn" style="padding:14px 32px; font-size:16px; border-radius:8px;
+    border:none; cursor:pointer; background:rgba(255,255,255,0.9); color:#222;">
+    开始 5 分钟体验
+  </button>
+</div>
+
+<!-- 结束提示（初始隐藏） -->
+<div id="end-message" style="position:fixed; inset:0; display:none; align-items:center;
+  justify-content:center; background:rgba(0,0,0,0.45); z-index:10; color:#fff;
+  text-align:center; flex-direction:column; gap:16px;">
+  <p style="font-size:18px;">本次体验完成</p>
+  <p style="font-size:13px; opacity:0.8;">慢慢睁开眼睛，回到当下</p>
+  <button id="restart-btn" style="padding:10px 24px; font-size:14px; border-radius:8px;
+    border:none; cursor:pointer; background:rgba(255,255,255,0.9); color:#222;">
+    再来一次
+  </button>
+</div>
+
+</body>
+</html>
