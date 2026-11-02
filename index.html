@@ -39,6 +39,19 @@
         StereoPlugin,
       ],
     });
+    const gyroBtn = document.querySelector('[data-psv-button="gyroscope"]');
+    if (gyroBtn) {
+     gyroBtn.addEventListener('click', async () => {
+    if (typeof DeviceOrientationEvent !== 'undefined'
+        && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const permission = await DeviceOrientationEvent.requestPermission();
+      if (permission !== 'granted') {
+        console.warn('陀螺仪权限被拒绝');
+        return;
+      }
+    }
+  });
+}
 
     const audio = new Audio('792342__klankbeeld__park-forest-haanwijk-1141-am-250306_1056_cut1.mp3');
     audio.loop = true;
