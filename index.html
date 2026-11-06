@@ -18,10 +18,9 @@
       width: 80px; height: 80px; border-radius: 50%;
       border: 2px solid rgba(255,255,255,0.6);
       margin: 0 auto 12px;
-      animation: breathe 10s ease-in-out infinite;
+      animation: breathe var(--breath-cycle, 10s) ease-in-out infinite;
       position: relative;
     }
-    /* 删掉了原来的 ::after 伪元素，文字统一由 JS 插入的 span 控制 */
     .breath-label {
       position: absolute; top: 50%; left: 50%;
       transform: translate(-50%, -50%);
@@ -33,7 +32,7 @@
       0%, 100% { transform: scale(1); opacity: 0.5; }
       50% { transform: scale(1.6); opacity: 0.9; }
     }
-    .scene-btn.active {
+    .scene-btn.active, .mode-btn.active {
       background: rgba(255,255,255,0.95) !important;
       font-weight: bold;
       box-shadow: 0 0 0 2px rgba(255,255,255,0.5);
@@ -76,7 +75,18 @@
         audio: '213804__craftcrestcom__campfire-in-the-woods-rear.mp3',
       },
     };
+
+    const breathModes = {
+      standard: { label: '标准（4秒吸气 / 6秒呼气）', cycle: 10000, inhale: 5000 },
+      quick:    { label: '快速（3秒吸气 / 4秒呼气）', cycle: 7000,  inhale: 3000 },
+    };
+    let currentBreathMode = 'standard';
+
     let currentScene = 'forest';
+    const savedScene = localStorage.getItem('opc_scene');
+    if (savedScene && scenes[savedScene]) {
+      currentScene = savedScene;
+    }
 
     const viewer = new Viewer({
       container: document.querySelector('#viewer'),
@@ -115,7 +125,6 @@
     let breathTextTimer = null;
     let sessionStartTime = 0;
 
-    // 统一更新开始按钮文案，初始化时和切换场景时都调用
     function updateStartButtonText() {
       const btn = document.getElementById('start-btn');
       if (btn) {
@@ -139,29 +148,28 @@
       }, step);
     }
 
-    // 呼吸文字：与 10 秒缩放周期对齐，0–5 秒吸气、5–10 秒呼气
-  function startBreathTextLoop() {
-  const circle = document.getElementById('breath-circle');
-  if (!circle) return;
+    function startBreathTextLoop() {
+      const circle = document.getElementById('breath-circle');
+      if (!circle) return;
 
-  let label = circle.querySelector('.breath-label');
-  if (!label) {
-    label = document.createElement('span');
-    label.className = 'breath-label';
-    circle.appendChild(label);
-  }
+      let label = circle.querySelector('.breath-label');
+      if (!label) {
+        label = document.createElement('span');
+        label.className = 'breath-label';
+        circle.appendChild(label);
+      }
 
-  // 以本次会话开始时间为相位基准，保证与圆环 CSS 动画同步
-  const update = () => {
-    const elapsed = performance.now() - sessionStartTime;
-    const t = (elapsed % 10000) / 1000;   // 0–10 秒
-    label.textContent = t < 5 ? '吸气' : '呼气';
-  };
+      const update = () => {
+        const mode = breathModes[currentBreathMode];
+        const elapsed = performance.now() - sessionStartTime;
+        const t = elapsed % mode.cycle;
+        label.textContent = t < mode.inhale ? '吸气' : '呼气';
+      };
 
-  update();
-  stopBreathTextLoop();
-  breathTextTimer = setInterval(update, 100);   // 100ms 足够平滑，开销也小
-  }
+      update();
+      stopBreathTextLoop();
+      breathTextTimer = setInterval(update, 100);
+    }
 
     function stopBreathTextLoop() {
       if (breathTextTimer) {
@@ -173,7 +181,6 @@
     function switchScene(key) {
       if (!scenes[key] || key === currentScene) return;
 
-      // 如果正在体验中，先停止当前会话
       if (sessionActive) {
         sessionActive = false;
         if (sessionTimer) {
@@ -192,49 +199,57 @@
       currentScene = key;
       const scene = scenes[key];
 
-      // 切换全景图
       viewer.setPanorama(scene.panorama).catch(err => console.warn('全景图加载失败:', err));
 
-      // 切换音频
       audio.pause();
       audio.src = scene.audio;
       audio.load();
       audio.volume = 0.7;
 
-      // 更新按钮高亮
       document.querySelectorAll('.scene-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.scene === key);
       });
 
-      // 更新开始按钮文案
+      localStorage.setItem('opc_scene', key);
+
       updateStartButtonText();
     }
 
+    function switchBreathMode(mode) {
+      if (!breathModes[mode] || mode === currentBreathMode) return;
+      currentBreathMode = mode;
+      document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.mode === mode);
+      });
+      updateBreathModeHint();
+    }
+    window.switchBreathMode = switchBreathMode;
+
     function startSession() {
-  if (sessionActive) return;
-  sessionActive = true;
+      if (sessionActive) return;
+      sessionActive = true;
 
-  document.getElementById('start-overlay').style.display = 'none';
-  document.getElementById('breath-guide').style.display = 'block';
+      document.getElementById('start-overlay').style.display = 'none';
+      document.getElementById('breath-guide').style.display = 'block';
 
-  // 记录会话起点
-  sessionStartTime = performance.now();
+      sessionStartTime = performance.now();
 
-  // 强制重置圆环 CSS 动画，确保从 scale(1) 开始
-  const circle = document.getElementById('breath-circle');
-  if (circle) {
-    circle.style.animation = 'none';
-    void circle.offsetWidth;        // 触发重排，让浏览器“忘掉”旧动画
-    circle.style.animation = '';
-  }
+      const circle = document.getElementById('breath-circle');
+      if (circle) {
+        const mode = breathModes[currentBreathMode];
+        circle.style.setProperty('--breath-cycle', `${mode.cycle / 1000}s`);
+        circle.style.animation = 'none';
+        void circle.offsetWidth;
+        circle.style.animation = '';
+      }
 
-  audio.currentTime = 0;
-  audio.play().catch(err => console.warn('音频播放失败:', err));
+      audio.currentTime = 0;
+      audio.play().catch(err => console.warn('音频播放失败:', err));
 
-  startBreathTextLoop();
+      startBreathTextLoop();
 
-  sessionTimer = setTimeout(endSession, 5 * 60 * 1000);
-  }
+      sessionTimer = setTimeout(endSession, 5 * 60 * 1000);
+    }
 
     function endSession() {
       sessionActive = false;
@@ -244,11 +259,16 @@
       document.getElementById('end-message').style.display = 'flex';
     }
 
-    // 把 switchScene 挂到全局，供 HTML 的 onclick 调用
     window.switchScene = switchScene;
 
-    // 页面初始化：更新开始按钮文案
     updateStartButtonText();
+    document.querySelectorAll('.scene-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.scene === currentScene);
+    });
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.mode === currentBreathMode);
+    });
+    updateBreathModeHint();
 
     document.getElementById('start-btn').addEventListener('click', startSession);
 
@@ -267,19 +287,24 @@
 
       startSession();
     });
+
+    function updateBreathModeHint() {
+  const hint = document.getElementById('breath-mode-hint');
+  if (hint) {
+    hint.textContent = breathModes[currentBreathMode].label;
+  }
+}
   </script>
 
-  <!-- 呼吸引导 -->
   <div id="breath-guide">
     <div id="breath-circle"></div>
   </div>
 
-  <!-- 场景切换按钮 -->
   <div id="scene-switcher" style="position:fixed; top:16px; right:16px; z-index:20;
     display:flex; flex-direction:column; gap:8px;">
-    <button class="scene-btn active" data-scene="forest" onclick="switchScene('forest')"
+    <button class="scene-btn" data-scene="forest" onclick="switchScene('forest')"
       style="padding:8px 14px; font-size:13px; border-radius:6px; border:none;
-      cursor:pointer; background:rgba(255,255,255,0.85); color:#222;">森林晨雾</button>
+      cursor:pointer; background:rgba(255,255,255,0.6); color:#222;">森林晨雾</button>
     <button class="scene-btn" data-scene="beach" onclick="switchScene('beach')"
       style="padding:8px 14px; font-size:13px; border-radius:6px; border:none;
       cursor:pointer; background:rgba(255,255,255,0.6); color:#222;">海边落日</button>
@@ -288,16 +313,23 @@
       cursor:pointer; background:rgba(255,255,255,0.6); color:#222;">深夜篝火</button>
   </div>
 
-  <!-- 开始按钮 -->
   <div id="start-overlay" style="position:fixed; inset:0; display:flex; align-items:center;
-    justify-content:center; background:rgba(0,0,0,0.35); z-index:10;">
+    justify-content:center; flex-direction:column; background:rgba(0,0,0,0.35); z-index:10;">
+    <div id="breath-mode-switcher" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+  <button class="mode-btn" data-mode="standard" onclick="switchBreathMode('standard')"
+    style="padding:6px 12px; font-size:12px; border-radius:6px; border:none;
+    cursor:pointer; background:rgba(255,255,255,0.6); color:#222;">标准节奏</button>
+  <button class="mode-btn" data-mode="quick" onclick="switchBreathMode('quick')"
+    style="padding:6px 12px; font-size:12px; border-radius:6px; border:none;
+    cursor:pointer; background:rgba(255,255,255,0.6); color:#222;">快速节奏</button>
+  <span id="breath-mode-hint" style="font-size:12px; color:rgba(255,255,255,0.85);"></span>
+  </div>
     <button id="start-btn" style="padding:14px 32px; font-size:16px; border-radius:8px;
       border:none; cursor:pointer; background:rgba(255,255,255,0.9); color:#222;">
       开始 5 分钟体验
     </button>
   </div>
 
-  <!-- 结束提示 -->
   <div id="end-message" style="position:fixed; inset:0; display:none; align-items:center;
     justify-content:center; background:rgba(0,0,0,0.45); z-index:10; color:#fff;
     text-align:center; flex-direction:column; gap:16px;">
